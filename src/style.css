@@ -176,8 +176,8 @@ body {
 }
 
 .tabs button.active {
-  color: var(--accent-dark);
-  border-bottom-color: var(--accent);
+  color: var(--blue-dark);
+  border-bottom-color: var(--blue-dark);
   font-weight: 600;
 }
 
@@ -332,12 +332,12 @@ body {
   gap: 8px;
   padding: 10px 16px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #fff7e0, #ffe9c7);
-  border: 1px solid #f0d38c;
-  color: #7a4b06;
+  background: linear-gradient(135deg, #eaf2fb, #d9e8f8);
+  border: 1px solid #b9d6f0;
+  color: #1e3a6a;
   font-weight: 600;
   font-size: 13px;
-  box-shadow: 0 2px 8px rgba(191,140,20,0.18);
+  box-shadow: 0 2px 8px rgba(30,58,138,0.16);
 }
 .gift-card-emoji { font-size: 20px; }
 
