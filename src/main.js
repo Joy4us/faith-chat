@@ -27,6 +27,23 @@ const GIFTS = {
   light: { emoji: '✨', label: 'Blessing' },
 };
 
+// Bible verse lookup, backed by bible-api.com (public-domain translations
+// only: KJV / WEB). Book lists are used to populate the Old/New Testament
+// pickers in the Bible tab.
+const OT_BOOKS = [
+  'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy', 'Joshua', 'Judges', 'Ruth',
+  '1 Samuel', '2 Samuel', '1 Kings', '2 Kings', '1 Chronicles', '2 Chronicles', 'Ezra',
+  'Nehemiah', 'Esther', 'Job', 'Psalms', 'Proverbs', 'Ecclesiastes', 'Song of Solomon',
+  'Isaiah', 'Jeremiah', 'Lamentations', 'Ezekiel', 'Daniel', 'Hosea', 'Joel', 'Amos',
+  'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk', 'Zephaniah', 'Haggai', 'Zechariah', 'Malachi',
+];
+const NT_BOOKS = [
+  'Matthew', 'Mark', 'Luke', 'John', 'Acts', 'Romans', '1 Corinthians', '2 Corinthians',
+  'Galatians', 'Ephesians', 'Philippians', 'Colossians', '1 Thessalonians', '2 Thessalonians',
+  '1 Timothy', '2 Timothy', 'Titus', 'Philemon', 'Hebrews', 'James', '1 Peter', '2 Peter',
+  '1 John', '2 John', '3 John', 'Jude', 'Revelation',
+];
+
 const app = document.getElementById('app');
 
 let session = null; // {userId, accessToken, appKey, areaCode, displayName, isChristian}
@@ -37,6 +54,10 @@ const roomMessages = [];
 let activeTab = 'room';
 let activePeer = null;
 let engineReady = false;
+let bibleTestament = 'ot';
+let lastVerseResult = null; // {reference, text, translation}
+let roomReplyTarget = null; // {name, text} — message currently being replied to in the public room
+let dmReplyTarget = null; // {name, text} — message currently being replied to in the DM thread
 
 function saveSession() {
   try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch (e) { /* ignore */ }
@@ -154,12 +175,32 @@ function handleIncomingMessage(message) {
 
   const ch = message.channelIdentifier;
   const rawText = message.content?.text ?? '[unsupported message type]';
-  const giftKey = typeof rawText === 'string' && rawText.startsWith('GIFT::') ? rawText.slice(6) : null;
+  let giftKey = null;
+  let verseObj = null;
+  let replyTo = null;
+  let displayText = rawText;
+
+  if (typeof rawText === 'string') {
+    if (rawText.startsWith('GIFT::')) {
+      giftKey = rawText.slice(6);
+    } else if (rawText.startsWith('VERSE::')) {
+      try { verseObj = JSON.parse(rawText.slice(7)); } catch (e) { verseObj = null; }
+    } else if (rawText.startsWith('REPLY::')) {
+      try {
+        const parsed = JSON.parse(rawText.slice(7));
+        replyTo = { name: parsed.quoteName, text: parsed.quoteText };
+        displayText = parsed.text;
+      } catch (e) { /* fall back to showing the raw text */ }
+    }
+  }
+
   const renderable = {
     mine: false,
     name: message.content?.senderUserInfo?.name || message.senderUserId,
-    text: rawText,
+    text: displayText,
     gift: giftKey && GIFTS[giftKey] ? giftKey : null,
+    verse: verseObj,
+    replyTo,
     time: message.sentTime || Date.now(),
   };
 
@@ -194,6 +235,29 @@ function giftBarHtml(scope) {
   return `<div class="gift-bar" data-scope="${scope}">${buttons}</div>`;
 }
 
+function bookOptionsHtml(testament) {
+  const books = testament === 'nt' ? NT_BOOKS : OT_BOOKS;
+  return books.map((b) => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('');
+}
+
+function bibleToolHtml() {
+  return `
+    <div class="bible-tool">
+      <div class="testament-toggle">
+        <button type="button" data-testament="ot" class="${bibleTestament === 'ot' ? 'active' : ''}">Old Testament</button>
+        <button type="button" data-testament="nt" class="${bibleTestament === 'nt' ? 'active' : ''}">New Testament</button>
+      </div>
+      <div class="bible-fields">
+        <select id="bibleBook">${bookOptionsHtml(bibleTestament)}</select>
+        <input id="bibleChapter" type="number" min="1" placeholder="Chapter" />
+        <input id="bibleVerse" type="text" placeholder="Verse (e.g. 16 or 1-4, optional)" />
+        <button type="button" id="bibleLookupBtn">Look up</button>
+      </div>
+      <div class="bible-result" id="bibleResult"></div>
+    </div>
+  `;
+}
+
 function renderChatScreen() {
   app.innerHTML = `
     <div class="chat-screen show">
@@ -207,12 +271,14 @@ function renderChatScreen() {
       <div class="tabs">
         <button data-tab="room" class="${activeTab === 'room' ? 'active' : ''}">Public room</button>
         <button data-tab="dm" class="${activeTab === 'dm' ? 'active' : ''}">${session.isChristian ? 'Direct messages' : 'Message Christian'}</button>
+        <button data-tab="bible" class="${activeTab === 'bible' ? 'active' : ''}">&#128214; Bible</button>
       </div>
       <div class="panels">
         <div class="panel ${activeTab === 'room' ? 'active' : ''}" id="roomPanel">
           <div class="thread-wrap">
             <div class="messages" id="roomMessages"></div>
             ${giftBarHtml('room')}
+            <div class="reply-preview-slot" id="roomReplyPreview"></div>
             <div class="composer">
               <input id="roomInput" type="text" placeholder="Say something in the public room..." />
               <button id="roomSend">Send</button>
@@ -224,11 +290,15 @@ function renderChatScreen() {
           <div class="thread-wrap">
             <div class="messages" id="dmMessages"></div>
             ${giftBarHtml('dm')}
+            <div class="reply-preview-slot" id="dmReplyPreview"></div>
             <div class="composer">
               <input id="dmInput" type="text" placeholder="${session.isChristian ? 'Select a guest on the left to reply...' : 'Send Christian a private message...'}" />
               <button id="dmSend">Send</button>
             </div>
           </div>
+        </div>
+        <div class="panel bible-panel ${activeTab === 'bible' ? 'active' : ''}" id="biblePanel">
+          ${bibleToolHtml()}
         </div>
       </div>
     </div>
@@ -255,26 +325,90 @@ function renderChatScreen() {
     });
   });
 
+  document.getElementById('bibleLookupBtn').addEventListener('click', lookupVerse);
+  document.querySelectorAll('.testament-toggle button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      bibleTestament = btn.dataset.testament;
+      renderChatScreen();
+    });
+  });
+  if (lastVerseResult) renderBibleResult();
+
+  renderReplyPreview('room');
+  renderReplyPreview('dm');
+
   if (activeTab === 'room') renderRoomMessages();
   if (activeTab === 'dm') { renderPeerSidebar(); renderDmMessages(); }
 }
 
-function bubbleHtml(m) {
+function messagePreviewText(m) {
+  if (m.verse) return `\u{1F4D6} ${m.verse.reference}`;
+  if (m.gift && GIFTS[m.gift]) return `${GIFTS[m.gift].emoji} ${GIFTS[m.gift].label}`;
+  const t = m.text || '';
+  return t.length > 100 ? t.slice(0, 100) + '…' : t;
+}
+
+function bubbleHtml(m, idx) {
   const time = new Date(m.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const cleanName = (m.name || '').replace(/ \(me\)$/, '');
+  const replyBtn = `<button type="button" class="reply-trigger" data-idx="${idx}" title="Reply">&#8617; Reply</button>`;
+  const replyBlock = m.replyTo
+    ? `<div class="reply-quote"><strong>${escapeHtml(m.replyTo.name)}</strong>: ${escapeHtml(m.replyTo.text)}</div>`
+    : '';
+
+  if (m.verse) {
+    return `<div class="msg verse ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(cleanName)} · ${time} ${replyBtn}</div>${replyBlock}<div class="verse-card"><div class="verse-ref">&#128214; ${escapeHtml(m.verse.reference)}</div><div class="verse-text">${escapeHtml(m.verse.text)}</div><div class="verse-version">${escapeHtml(m.verse.translation)}</div></div></div>`;
+  }
   if (m.gift && GIFTS[m.gift]) {
     const g = GIFTS[m.gift];
-    return `<div class="msg gift ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(m.name)} · ${time}</div><div class="gift-card"><span class="gift-card-emoji">${g.emoji}</span><span class="gift-card-label">${escapeHtml(g.label)}</span></div></div>`;
+    return `<div class="msg gift ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(cleanName)} · ${time} ${replyBtn}</div>${replyBlock}<div class="gift-card"><span class="gift-card-emoji">${g.emoji}</span><span class="gift-card-label">${escapeHtml(g.label)}</span></div></div>`;
   }
-  return `<div class="msg ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(m.name)} · ${time}</div>${escapeHtml(m.text)}</div>`;
+  return `<div class="msg ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(cleanName)} · ${time} ${replyBtn}</div>${replyBlock}${escapeHtml(m.text)}</div>`;
+}
+
+function wireReplyButtons(box, list, scope) {
+  box.querySelectorAll('.reply-trigger').forEach((btn) => {
+    const idx = Number(btn.dataset.idx);
+    const m = list[idx];
+    if (!m) return;
+    btn.addEventListener('click', () => {
+      const target = { name: (m.name || '').replace(/ \(me\)$/, ''), text: messagePreviewText(m) };
+      if (scope === 'room') roomReplyTarget = target; else dmReplyTarget = target;
+      renderReplyPreview(scope);
+      const inputEl = document.getElementById(scope === 'room' ? 'roomInput' : 'dmInput');
+      if (inputEl) inputEl.focus();
+    });
+  });
+}
+
+function renderReplyPreview(scope) {
+  const slot = document.getElementById(scope === 'room' ? 'roomReplyPreview' : 'dmReplyPreview');
+  if (!slot) return;
+  const target = scope === 'room' ? roomReplyTarget : dmReplyTarget;
+  if (!target) { slot.innerHTML = ''; return; }
+  slot.innerHTML = `
+    <div class="reply-preview">
+      <div class="reply-preview-text">Replying to <strong>${escapeHtml(target.name)}</strong>: ${escapeHtml(target.text)}</div>
+      <button type="button" class="reply-cancel">&times;</button>
+    </div>
+  `;
+  const cancelBtn = slot.querySelector('.reply-cancel');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      if (scope === 'room') roomReplyTarget = null; else dmReplyTarget = null;
+      renderReplyPreview(scope);
+    });
+  }
 }
 
 function renderRoomMessages() {
   const box = document.getElementById('roomMessages');
   if (!box) return;
   box.innerHTML = roomMessages.length
-    ? roomMessages.map(bubbleHtml).join('')
+    ? roomMessages.map((m, idx) => bubbleHtml(m, idx)).join('')
     : '<div class="empty-hint">No one has spoken yet — say hello \u{1F44B}</div>';
   box.scrollTop = box.scrollHeight;
+  wireReplyButtons(box, roomMessages, 'room');
 }
 
 function renderPeerSidebar() {
@@ -302,8 +436,100 @@ function renderDmMessages() {
   } else {
     msgs = peers.has(CHRISTIAN_ID) ? peers.get(CHRISTIAN_ID).messages : [];
   }
-  box.innerHTML = msgs.length ? msgs.map(bubbleHtml).join('') : '<div class="empty-hint">No messages yet — say something</div>';
+  box.innerHTML = msgs.length ? msgs.map((m, idx) => bubbleHtml(m, idx)).join('') : '<div class="empty-hint">No messages yet — say something</div>';
   box.scrollTop = box.scrollHeight;
+  wireReplyButtons(box, msgs, 'dm');
+}
+
+// ---------------- Bible lookup ----------------
+async function lookupVerse() {
+  const bookEl = document.getElementById('bibleBook');
+  const chapterEl = document.getElementById('bibleChapter');
+  const verseEl = document.getElementById('bibleVerse');
+  const resultBox = document.getElementById('bibleResult');
+  if (!bookEl || !chapterEl || !resultBox) return;
+
+  const book = bookEl.value;
+  const chapter = chapterEl.value.trim();
+  const verse = verseEl.value.trim();
+
+  if (!book || !chapter) {
+    resultBox.innerHTML = '<div class="bible-error">Please choose a book and enter a chapter number.</div>';
+    return;
+  }
+
+  const ref = verse ? `${book} ${chapter}:${verse}` : `${book} ${chapter}`;
+  resultBox.innerHTML = `<div class="bible-loading">Looking up ${escapeHtml(ref)}…</div>`;
+
+  try {
+    const res = await fetch(`https://bible-api.com/${encodeURIComponent(ref)}?translation=kjv`);
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || data.error || !data.text) {
+      resultBox.innerHTML = '<div class="bible-error">Couldn’t find that verse — please check the chapter and verse number.</div>';
+      lastVerseResult = null;
+      return;
+    }
+    lastVerseResult = {
+      reference: data.reference,
+      text: data.text.trim(),
+      translation: data.translation_name,
+    };
+    renderBibleResult();
+  } catch (e) {
+    resultBox.innerHTML = '<div class="bible-error">Couldn’t find that verse — please check the chapter and verse number.</div>';
+    lastVerseResult = null;
+  }
+}
+
+function renderBibleResult() {
+  const resultBox = document.getElementById('bibleResult');
+  if (!resultBox || !lastVerseResult) return;
+  resultBox.innerHTML = `
+    <div class="verse-card standalone">
+      <div class="verse-ref">&#128214; ${escapeHtml(lastVerseResult.reference)}</div>
+      <div class="verse-text">${escapeHtml(lastVerseResult.text)}</div>
+      <div class="verse-version">${escapeHtml(lastVerseResult.translation)}</div>
+    </div>
+    <div class="verse-actions">
+      <button type="button" id="verseSendRoom">Share in public room</button>
+      <button type="button" id="verseSendDm">${session.isChristian ? 'Send to selected guest' : 'Send to Christian'}</button>
+    </div>
+  `;
+  document.getElementById('verseSendRoom').addEventListener('click', () => sendVerse('room'));
+  document.getElementById('verseSendDm').addEventListener('click', () => sendVerse('dm'));
+}
+
+async function sendVerse(scope) {
+  if (!lastVerseResult) return;
+  const text = `VERSE::${JSON.stringify(lastVerseResult)}`;
+
+  if (scope === 'room') {
+    if (!openChannel) return;
+    const params = new SendTextMessageParams({ text, senderUserInfo: { name: session.displayName } });
+    const result = await openChannel.sendMessage(params);
+    if (result.isOk) {
+      roomMessages.push({ mine: true, name: session.displayName + ' (me)', text, verse: lastVerseResult, time: Date.now() });
+      renderRoomMessages();
+    } else {
+      console.warn('[faith-chat] send verse failed', result);
+    }
+    return;
+  }
+
+  const peerId = session.isChristian ? activePeer : CHRISTIAN_ID;
+  if (!peerId) { alert('Please select a guest on the left first'); return; }
+  if (!dmChannels.has(peerId)) dmChannels.set(peerId, new DirectChannel(peerId));
+  const channel = dmChannels.get(peerId);
+  const params = new SendTextMessageParams({ text, senderUserInfo: { name: session.displayName } });
+  const result = await channel.sendMessage(params);
+  if (result.isOk) {
+    if (!peers.has(peerId)) peers.set(peerId, { name: peerId, messages: [] });
+    peers.get(peerId).messages.push({ mine: true, name: session.displayName + ' (me)', text, verse: lastVerseResult, time: Date.now() });
+    renderDmMessages();
+    if (session.isChristian) renderPeerSidebar();
+  } else {
+    console.warn('[faith-chat] send verse failed', result);
+  }
 }
 
 // ---------------- Gift animations ----------------
@@ -383,13 +609,27 @@ async function sendGift(scope, key) {
 
 async function sendRoomMessage() {
   const input = document.getElementById('roomInput');
-  const text = input.value.trim();
-  if (!text || !openChannel) return;
+  const rawText = input.value.trim();
+  if (!rawText || !openChannel) return;
   input.value = '';
-  const params = new SendTextMessageParams({ text, senderUserInfo: { name: session.displayName } });
+
+  const target = roomReplyTarget;
+  const wireText = target
+    ? `REPLY::${JSON.stringify({ quoteName: target.name, quoteText: target.text, text: rawText })}`
+    : rawText;
+
+  const params = new SendTextMessageParams({ text: wireText, senderUserInfo: { name: session.displayName } });
   const result = await openChannel.sendMessage(params);
   if (result.isOk) {
-    roomMessages.push({ mine: true, name: session.displayName + ' (me)', text, time: Date.now() });
+    roomMessages.push({
+      mine: true,
+      name: session.displayName + ' (me)',
+      text: rawText,
+      replyTo: target ? { name: target.name, text: target.text } : null,
+      time: Date.now(),
+    });
+    roomReplyTarget = null;
+    renderReplyPreview('room');
     renderRoomMessages();
   } else {
     console.warn('[faith-chat] send room message failed', result);
@@ -399,18 +639,32 @@ async function sendRoomMessage() {
 
 async function sendDmMessage() {
   const input = document.getElementById('dmInput');
-  const text = input.value.trim();
-  if (!text) return;
+  const rawText = input.value.trim();
+  if (!rawText) return;
   const peerId = session.isChristian ? activePeer : CHRISTIAN_ID;
   if (!peerId) { alert('Please select a guest on the left first'); return; }
   input.value = '';
+
+  const target = dmReplyTarget;
+  const wireText = target
+    ? `REPLY::${JSON.stringify({ quoteName: target.name, quoteText: target.text, text: rawText })}`
+    : rawText;
+
   if (!dmChannels.has(peerId)) dmChannels.set(peerId, new DirectChannel(peerId));
   const channel = dmChannels.get(peerId);
-  const params = new SendTextMessageParams({ text, senderUserInfo: { name: session.displayName } });
+  const params = new SendTextMessageParams({ text: wireText, senderUserInfo: { name: session.displayName } });
   const result = await channel.sendMessage(params);
   if (result.isOk) {
     if (!peers.has(peerId)) peers.set(peerId, { name: peerId, messages: [] });
-    peers.get(peerId).messages.push({ mine: true, name: session.displayName + ' (me)', text, time: Date.now() });
+    peers.get(peerId).messages.push({
+      mine: true,
+      name: session.displayName + ' (me)',
+      text: rawText,
+      replyTo: target ? { name: target.name, text: target.text } : null,
+      time: Date.now(),
+    });
+    dmReplyTarget = null;
+    renderReplyPreview('dm');
     renderDmMessages();
     if (session.isChristian) renderPeerSidebar();
   } else {

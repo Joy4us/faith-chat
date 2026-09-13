@@ -236,6 +236,32 @@ body {
   margin-bottom: 3px;
 }
 
+.reply-trigger {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: inherit;
+  opacity: 0.8;
+  padding: 0 0 0 6px;
+}
+.reply-trigger:hover { opacity: 1; text-decoration: underline; }
+
+.reply-quote {
+  font-size: 12px;
+  padding: 5px 8px;
+  margin-bottom: 5px;
+  border-left: 3px solid var(--blue);
+  background: rgba(30, 58, 138, 0.08);
+  border-radius: 4px;
+  color: inherit;
+  opacity: 0.9;
+}
+.msg.me .reply-quote {
+  border-left-color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.15);
+}
+
 .msg.them {
   align-self: flex-start;
   background: var(--bubble-them);
@@ -294,6 +320,11 @@ body {
 }
 .msg.gift.me { align-self: flex-end; }
 .msg.gift.them { align-self: flex-start; }
+.msg.gift .meta,
+.msg.verse .meta {
+  color: var(--muted);
+  opacity: 1;
+}
 
 .gift-card {
   display: inline-flex;
@@ -411,6 +442,165 @@ body {
   70% { transform: translate(-50%, -55%) scale(1.1); }
   100% { opacity: 0; transform: translate(-50%, -60%) scale(1.15); }
 }
+
+/* ---------- Bible verse lookup ---------- */
+.bible-panel {
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.bible-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.testament-toggle {
+  display: flex;
+  gap: 8px;
+}
+.testament-toggle button {
+  flex: 1;
+  padding: 8px 0;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #f7f9fd;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.testament-toggle button.active {
+  background: var(--blue-dark);
+  color: white;
+  border-color: var(--blue-dark);
+  font-weight: 600;
+}
+
+.bible-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.bible-fields select,
+.bible-fields input {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font-size: 14px;
+  outline: none;
+}
+.bible-fields select { flex: 1 1 170px; }
+.bible-fields input#bibleChapter { width: 90px; }
+.bible-fields input#bibleVerse { flex: 1 1 150px; }
+.bible-fields select:focus,
+.bible-fields input:focus { border-color: var(--blue); }
+.bible-fields button {
+  padding: 9px 18px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+}
+.bible-fields button:hover { background: var(--accent-dark); }
+
+.bible-result { min-height: 20px; }
+.bible-loading,
+.bible-error {
+  font-size: 13px;
+  padding: 8px 0;
+  color: var(--muted);
+}
+.bible-error { color: var(--accent-dark); }
+
+.verse-card {
+  background: linear-gradient(135deg, #fdf6e6, #f7ecd0);
+  border: 1px solid #e6d6a3;
+  border-radius: 14px;
+  padding: 16px 18px;
+  box-shadow: 0 2px 10px rgba(151, 29, 34, 0.08);
+}
+.verse-card.standalone { margin-bottom: 10px; }
+.verse-ref {
+  font-weight: 700;
+  color: var(--blue-dark);
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.verse-text {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  color: #4a3a12;
+  line-height: 1.7;
+  white-space: pre-line;
+  font-size: 14px;
+}
+.verse-version {
+  margin-top: 10px;
+  font-size: 11px;
+  color: #a0895a;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.verse-actions {
+  display: flex;
+  gap: 8px;
+}
+.verse-actions button {
+  flex: 1;
+  padding: 9px 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #f7f9fd;
+  color: var(--blue-dark);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.verse-actions button:hover { background: #eef2fb; }
+
+.msg.verse {
+  background: none;
+  padding: 2px 0;
+  max-width: 88%;
+}
+.msg.verse .verse-card { margin: 0; }
+.msg.verse.me { align-self: flex-end; }
+.msg.verse.them { align-self: flex-start; }
+
+.reply-preview-slot:not(:empty) {
+  padding: 8px 12px 0;
+}
+.reply-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #eef2fb;
+  border-left: 3px solid var(--blue);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--ink);
+}
+.reply-preview-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reply-cancel {
+  background: none;
+  border: none;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  flex: 0 0 auto;
+  padding: 0;
+}
+.reply-cancel:hover { color: var(--accent-dark); }
 
 .composer {
   display: flex;
