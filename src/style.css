@@ -332,12 +332,12 @@ body {
   gap: 8px;
   padding: 10px 16px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #eaf2fb, #d9e8f8);
-  border: 1px solid #b9d6f0;
-  color: #1e3a6a;
+  background: linear-gradient(135deg, #d2ecff, #9fd8ff);
+  border: 1px solid #63bdf2;
+  color: #0b4a86;
   font-weight: 600;
   font-size: 13px;
-  box-shadow: 0 2px 8px rgba(30,58,138,0.16);
+  box-shadow: 0 2px 8px rgba(15,120,200,0.28);
 }
 .gift-card-emoji { font-size: 20px; }
 
