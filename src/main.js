@@ -86,14 +86,14 @@ function renderGate(errorMsg) {
   app.innerHTML = `
     <div class="gate">
       <div class="cross">&#10013;</div>
-      <h1>Chat with Christian</h1>
+      <h1>Chat with Our Ministry Team</h1>
       <p class="sub">A public space to talk about faith. Come say hello — the public room is visible to everyone, and you can also send a private 1:1 message.</p>
       <input id="nameInput" type="text" placeholder="Your nickname (strangers welcome)" maxlength="24" />
       <div class="passcode-row" id="passRow">
         <input id="passInput" type="password" placeholder="Access passcode" />
       </div>
       <button id="enterBtn">Enter chat</button>
-      <button class="toggle" id="modeToggle">I am Christian &#8594;</button>
+      <button class="toggle" id="modeToggle">I am on the ministry team &#8594;</button>
       <div class="error" id="errBox">${errorMsg ? escapeHtml(errorMsg) : ''}</div>
     </div>
   `;
@@ -109,8 +109,8 @@ function renderGate(errorMsg) {
   modeToggle.addEventListener('click', () => {
     isChristianMode = !isChristianMode;
     passRow.classList.toggle('show', isChristianMode);
-    modeToggle.textContent = isChristianMode ? '← I am a guest' : 'I am Christian →';
-    nameInput.placeholder = isChristianMode ? 'Display name (e.g. Christian)' : 'Your nickname (strangers welcome)';
+    modeToggle.textContent = isChristianMode ? '← I am a guest' : 'I am on the ministry team →';
+    nameInput.placeholder = isChristianMode ? 'Display name (shown to guests)' : 'Your nickname (strangers welcome)';
   });
 
   async function doEnter() {
@@ -262,7 +262,7 @@ function renderChatScreen() {
   app.innerHTML = `
     <div class="chat-screen show">
       <div class="topbar">
-        <strong>${session.isChristian ? '&#10013; Christian (me)' : 'Chat with Christian'}</strong>
+        <strong>${session.isChristian ? '&#10013; Ministry Team (me)' : 'Chat with Our Ministry Team'}</strong>
         <span class="whoami-wrap">
           <span class="whoami">${escapeHtml(session.displayName)}${session.isChristian ? '' : ' · guest'}</span>
           <button class="logout-link" id="logoutBtn" title="Log out and use a different name">Switch</button>
@@ -270,7 +270,7 @@ function renderChatScreen() {
       </div>
       <div class="tabs">
         <button data-tab="room" class="${activeTab === 'room' ? 'active' : ''}">Public room</button>
-        <button data-tab="dm" class="${activeTab === 'dm' ? 'active' : ''}">${session.isChristian ? 'Direct messages' : 'Message Christian'}</button>
+        <button data-tab="dm" class="${activeTab === 'dm' ? 'active' : ''}">${session.isChristian ? 'Direct messages' : 'Message the Ministry Team'}</button>
         <button data-tab="bible" class="${activeTab === 'bible' ? 'active' : ''}">&#128214; Bible</button>
       </div>
       <div class="panels">
@@ -292,7 +292,7 @@ function renderChatScreen() {
             ${giftBarHtml('dm')}
             <div class="reply-preview-slot" id="dmReplyPreview"></div>
             <div class="composer">
-              <input id="dmInput" type="text" placeholder="${session.isChristian ? 'Select a guest on the left to reply...' : 'Send Christian a private message...'}" />
+              <input id="dmInput" type="text" placeholder="${session.isChristian ? 'Select a guest on the left to reply...' : 'Send our ministry team a private message...'}" />
               <button id="dmSend">Send</button>
             </div>
           </div>
@@ -492,7 +492,7 @@ function renderBibleResult() {
     </div>
     <div class="verse-actions">
       <button type="button" id="verseSendRoom">Share in public room</button>
-      <button type="button" id="verseSendDm">${session.isChristian ? 'Send to selected guest' : 'Send to Christian'}</button>
+      <button type="button" id="verseSendDm">${session.isChristian ? 'Send to selected guest' : 'Send to the Ministry Team'}</button>
     </div>
   `;
   document.getElementById('verseSendRoom').addEventListener('click', () => sendVerse('room'));
@@ -688,7 +688,7 @@ async function connectAndRender() {
 
   if (!session.isChristian) {
     dmChannels.set(CHRISTIAN_ID, new DirectChannel(CHRISTIAN_ID));
-    peers.set(CHRISTIAN_ID, { name: 'Christian', messages: [] });
+    peers.set(CHRISTIAN_ID, { name: 'Ministry Team', messages: [] });
   }
 
   renderChatScreen();
