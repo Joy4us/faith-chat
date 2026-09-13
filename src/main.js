@@ -215,11 +215,9 @@ async function loadDmHistory(peerId) {
       isAscending: true,
     });
     let pages = 0;
-    console.log('[faith-chat][debug] loadDmHistory start', peerId, 'hasNext=', query.hasNext);
     while (query.hasNext && pages < 4) {
       const result = await query.loadNextPage();
       pages++;
-      console.log('[faith-chat][debug] loadNextPage result', JSON.stringify({isOk: result.isOk, error: result.error, data: result.data}));
       if (!result.isOk || !result.data || !Array.isArray(result.data.data)) break;
       for (const message of result.data.data) {
         const renderable = toRenderable(message);
