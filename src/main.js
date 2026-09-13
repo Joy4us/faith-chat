@@ -690,7 +690,7 @@ async function connectAndRender() {
   }
 
   openChannel = new OpenChannel(ROOM_ID);
-  await openChannel.enterChannel({ messageCount: 30 });
+  await openChannel.enterChannel({ messageCount: 100 });
 
   if (!session.isChristian) {
     dmChannels.set(CHRISTIAN_ID, new DirectChannel(CHRISTIAN_ID));
