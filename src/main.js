@@ -258,11 +258,17 @@ function bibleToolHtml() {
   `;
 }
 
+function topbarTitle() {
+  if (activeTab === 'bible') return '&#128214; Bible';
+  if (activeTab === 'dm') return session.isChristian ? 'Direct messages' : 'Message the Ministry Team';
+  return 'Public Chat';
+}
+
 function renderChatScreen() {
   app.innerHTML = `
     <div class="chat-screen show">
       <div class="topbar">
-        <strong>${session.isChristian ? '&#10013; Ministry Team (me)' : 'Chat with Our Ministry Team'}</strong>
+        <strong>${topbarTitle()}</strong>
         <span class="whoami-wrap">
           <span class="whoami">${escapeHtml(session.displayName)}${session.isChristian ? '' : ' · guest'}</span>
           <button class="logout-link" id="logoutBtn" title="Log out and use a different name">Switch</button>
