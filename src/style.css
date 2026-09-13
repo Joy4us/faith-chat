@@ -1,14 +1,16 @@
 :root {
-  --bg: #f4f1ea;
+  --bg: #f4f7fb;
   --panel: #ffffff;
-  --ink: #2b2620;
-  --muted: #8a8175;
-  --accent: #a8763e;
-  --accent-dark: #8a5f2f;
-  --bubble-me: #a8763e;
-  --bubble-them: #efe9dd;
-  --line: #e6ddcc;
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  --ink: #1c2333;
+  --muted: #64748b;
+  --accent: #c0272d;
+  --accent-dark: #971d22;
+  --blue: #1e3a8a;
+  --blue-dark: #14285f;
+  --bubble-me: #1e3a8a;
+  --bubble-them: #e9edf5;
+  --line: #d8e0ee;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -27,7 +29,7 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--panel);
-  box-shadow: 0 0 40px rgba(0,0,0,0.05);
+  box-shadow: 0 0 40px rgba(30,58,138,0.08);
 }
 
 /* ---------- Gate screen ---------- */
@@ -50,6 +52,7 @@ body {
 .gate h1 {
   font-size: 24px;
   margin: 0;
+  color: var(--blue-dark);
 }
 
 .gate p.sub {
@@ -69,7 +72,7 @@ body {
   outline: none;
 }
 
-.gate input:focus { border-color: var(--accent); }
+.gate input:focus { border-color: var(--blue); }
 
 .gate button {
   width: 100%;
@@ -88,7 +91,7 @@ body {
 
 .gate .toggle {
   font-size: 13px;
-  color: var(--muted);
+  color: var(--blue);
   text-decoration: underline;
   cursor: pointer;
   background: none;
@@ -108,7 +111,7 @@ body {
 .gate .passcode-row.show { display: flex; }
 
 .gate .error {
-  color: #b3432b;
+  color: var(--accent-dark);
   font-size: 13px;
   min-height: 18px;
 }
@@ -128,11 +131,15 @@ body {
   justify-content: space-between;
   padding: 14px 18px;
   border-bottom: 1px solid var(--line);
+  background: var(--blue-dark);
+  color: white;
 }
+
+.topbar strong { color: white; }
 
 .topbar .whoami {
   font-size: 13px;
-  color: var(--muted);
+  color: #cdd8f2;
 }
 
 .tabs {
@@ -173,6 +180,7 @@ body {
   border-right: 1px solid var(--line);
   overflow-y: auto;
   display: none;
+  background: #f0f4fb;
 }
 .peer-sidebar.show { display: block; }
 .peer-item {
@@ -247,7 +255,7 @@ body {
   outline: none;
   font-size: 14px;
 }
-.composer input:focus { border-color: var(--accent); }
+.composer input:focus { border-color: var(--blue); }
 
 .composer button {
   padding: 10px 18px;

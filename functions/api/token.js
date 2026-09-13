@@ -38,24 +38,24 @@ export async function onRequestPost(context) {
   try {
     body = await request.json();
   } catch (e) {
-    return json({ error: '请求格式有误' }, 400);
+    return json({ error: 'Invalid request format' }, 400);
   }
 
   const displayName = (body.displayName || '').toString().trim().slice(0, 24);
   const mode = body.mode === 'christian' ? 'christian' : 'guest';
 
   if (!displayName) {
-    return json({ error: '请输入昵称' }, 400);
+    return json({ error: 'Please enter a nickname' }, 400);
   }
 
   if (!env.NEXCONN_APP_KEY || !env.NEXCONN_APP_SECRET) {
-    return json({ error: '服务尚未配置完成，请联系管理员' }, 500);
+    return json({ error: 'The service is not configured yet, please contact the admin' }, 500);
   }
 
   let userId;
   if (mode === 'christian') {
     if (!env.CHRISTIAN_PASSCODE || body.passcode !== env.CHRISTIAN_PASSCODE) {
-      return json({ error: '口令不正确' }, 403);
+      return json({ error: 'Incorrect passcode' }, 403);
     }
     userId = env.CHRISTIAN_USER_ID || 'christian';
   } else {
@@ -85,18 +85,18 @@ export async function onRequestPost(context) {
       }),
     });
   } catch (e) {
-    return json({ error: '无法连接聊天服务，请稍后重试' }, 502);
+    return json({ error: 'Could not reach the chat service, please try again later' }, 502);
   }
 
   let data;
   try {
     data = await upstream.json();
   } catch (e) {
-    return json({ error: '聊天服务返回异常' }, 502);
+    return json({ error: 'The chat service returned an unexpected response' }, 502);
   }
 
   if (!upstream.ok || data.code !== 0 || !data.result?.accessToken) {
-    return json({ error: '获取访问令牌失败', detail: data }, 502);
+    return json({ error: 'Failed to obtain an access token', detail: data }, 502);
   }
 
   return json({

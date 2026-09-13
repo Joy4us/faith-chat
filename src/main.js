@@ -48,13 +48,13 @@ function renderGate(errorMsg) {
     <div class="gate">
       <div class="cross">&#10013;</div>
       <h1>Chat with Christian</h1>
-      <p class="sub">这是一个公开的信仰交流页面。进来聊两句吧 —— 公共交流室大家都能看到，也可以私信一对一聊。</p>
-      <input id="nameInput" type="text" placeholder="你的昵称（陌生人也欢迎）" maxlength="24" />
+      <p class="sub">A public space to talk about faith. Come say hello — the public room is visible to everyone, and you can also send a private 1:1 message.</p>
+      <input id="nameInput" type="text" placeholder="Your nickname (strangers welcome)" maxlength="24" />
       <div class="passcode-row" id="passRow">
-        <input id="passInput" type="password" placeholder="访问口令" />
+        <input id="passInput" type="password" placeholder="Access passcode" />
       </div>
-      <button id="enterBtn">进入聊天</button>
-      <button class="toggle" id="modeToggle">我是基督徒本人 →</button>
+      <button id="enterBtn">Enter chat</button>
+      <button class="toggle" id="modeToggle">I am Christian &#8594;</button>
       <div class="error" id="errBox">${errorMsg ? escapeHtml(errorMsg) : ''}</div>
     </div>
   `;
@@ -70,14 +70,14 @@ function renderGate(errorMsg) {
   modeToggle.addEventListener('click', () => {
     isChristianMode = !isChristianMode;
     passRow.classList.toggle('show', isChristianMode);
-    modeToggle.textContent = isChristianMode ? '← 我是访客' : '我是基督徒本人 →';
-    nameInput.placeholder = isChristianMode ? '显示名称（如 Christian）' : '你的昵称（陌生人也欢迎）';
+    modeToggle.textContent = isChristianMode ? '← I am a guest' : 'I am Christian →';
+    nameInput.placeholder = isChristianMode ? 'Display name (e.g. Christian)' : 'Your nickname (strangers welcome)';
   });
 
   async function doEnter() {
     const displayName = nameInput.value.trim();
-    if (!displayName) { errBox.textContent = '请输入一个昵称'; return; }
-    if (isChristianMode && !passInput.value.trim()) { errBox.textContent = '请输入访问口令'; return; }
+    if (!displayName) { errBox.textContent = 'Please enter a nickname'; return; }
+    if (isChristianMode && !passInput.value.trim()) { errBox.textContent = 'Please enter the access passcode'; return; }
     enterBtn.disabled = true;
     errBox.textContent = '';
     try {
@@ -91,12 +91,12 @@ function renderGate(errorMsg) {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '登录失败，请重试');
+      if (!res.ok) throw new Error(data.error || 'Sign-in failed, please try again');
       session = data;
       saveSession();
       await connectAndRender();
     } catch (e) {
-      errBox.textContent = e.message || '出错了，请重试';
+      errBox.textContent = e.message || 'Something went wrong, please try again';
       enterBtn.disabled = false;
     }
   }
@@ -138,7 +138,7 @@ function handleIncomingMessage(message) {
   const renderable = {
     mine: false,
     name: message.content?.senderUserInfo?.name || message.senderUserId,
-    text: message.content?.text ?? '[暂不支持的消息类型]',
+    text: message.content?.text ?? '[unsupported message type]',
     time: message.sentTime || Date.now(),
   };
 
@@ -168,20 +168,20 @@ function renderChatScreen() {
   app.innerHTML = `
     <div class="chat-screen show">
       <div class="topbar">
-        <strong>${session.isChristian ? '&#10013; Christian（我）' : 'Chat with Christian'}</strong>
-        <span class="whoami">${escapeHtml(session.displayName)}${session.isChristian ? '' : ' · 访客'}</span>
+        <strong>${session.isChristian ? '&#10013; Christian (me)' : 'Chat with Christian'}</strong>
+        <span class="whoami">${escapeHtml(session.displayName)}${session.isChristian ? '' : ' · guest'}</span>
       </div>
       <div class="tabs">
-        <button data-tab="room" class="${activeTab === 'room' ? 'active' : ''}">公共交流室</button>
-        <button data-tab="dm" class="${activeTab === 'dm' ? 'active' : ''}">${session.isChristian ? '私信列表' : '私信基督徒'}</button>
+        <button data-tab="room" class="${activeTab === 'room' ? 'active' : ''}">Public room</button>
+        <button data-tab="dm" class="${activeTab === 'dm' ? 'active' : ''}">${session.isChristian ? 'Direct messages' : 'Message Christian'}</button>
       </div>
       <div class="panels">
         <div class="panel ${activeTab === 'room' ? 'active' : ''}" id="roomPanel">
           <div class="thread-wrap">
             <div class="messages" id="roomMessages"></div>
             <div class="composer">
-              <input id="roomInput" type="text" placeholder="在公共交流室说点什么…" />
-              <button id="roomSend">发送</button>
+              <input id="roomInput" type="text" placeholder="Say something in the public room..." />
+              <button id="roomSend">Send</button>
             </div>
           </div>
         </div>
@@ -190,8 +190,8 @@ function renderChatScreen() {
           <div class="thread-wrap">
             <div class="messages" id="dmMessages"></div>
             <div class="composer">
-              <input id="dmInput" type="text" placeholder="${session.isChristian ? '选择左侧一位访客后回复…' : '给基督徒发一条私信…'}" />
-              <button id="dmSend">发送</button>
+              <input id="dmInput" type="text" placeholder="${session.isChristian ? 'Select a guest on the left to reply...' : 'Send Christian a private message...'}" />
+              <button id="dmSend">Send</button>
             </div>
           </div>
         </div>
@@ -216,7 +216,7 @@ function renderChatScreen() {
 }
 
 function bubbleHtml(m) {
-  const time = new Date(m.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  const time = new Date(m.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   return `<div class="msg ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(m.name)} · ${time}</div>${escapeHtml(m.text)}</div>`;
 }
 
@@ -225,7 +225,7 @@ function renderRoomMessages() {
   if (!box) return;
   box.innerHTML = roomMessages.length
     ? roomMessages.map(bubbleHtml).join('')
-    : '<div class="empty-hint">还没有人说话，来打个招呼吧 👋</div>';
+    : '<div class="empty-hint">No one has spoken yet — say hello \u{1F44B}</div>';
   box.scrollTop = box.scrollHeight;
 }
 
@@ -235,7 +235,7 @@ function renderPeerSidebar() {
   const items = [...peers.entries()];
   box.innerHTML = items.length
     ? items.map(([id, p]) => `<div class="peer-item ${id === activePeer ? 'active' : ''}" data-peer="${escapeHtml(id)}">${escapeHtml(p.name)}</div>`).join('')
-    : '<div class="peer-empty">暂时没有访客私信你</div>';
+    : '<div class="peer-empty">No guests have messaged you yet</div>';
   box.querySelectorAll('.peer-item[data-peer]').forEach((el) => {
     el.addEventListener('click', () => {
       activePeer = el.dataset.peer;
@@ -254,7 +254,7 @@ function renderDmMessages() {
   } else {
     msgs = peers.has(CHRISTIAN_ID) ? peers.get(CHRISTIAN_ID).messages : [];
   }
-  box.innerHTML = msgs.length ? msgs.map(bubbleHtml).join('') : '<div class="empty-hint">还没有私信记录，说点什么吧</div>';
+  box.innerHTML = msgs.length ? msgs.map(bubbleHtml).join('') : '<div class="empty-hint">No messages yet — say something</div>';
   box.scrollTop = box.scrollHeight;
 }
 
@@ -267,11 +267,11 @@ async function sendRoomMessage() {
   const params = new SendTextMessageParams({ text, senderUserInfo: { name: session.displayName } });
   const result = await openChannel.sendMessage(params);
   if (result.isOk) {
-    roomMessages.push({ mine: true, name: session.displayName + '（我）', text, time: Date.now() });
+    roomMessages.push({ mine: true, name: session.displayName + ' (me)', text, time: Date.now() });
     renderRoomMessages();
   } else {
     console.warn('[faith-chat] send room message failed', result);
-    alert('发送失败，请重试');
+    alert('Failed to send, please try again');
   }
 }
 
@@ -280,7 +280,7 @@ async function sendDmMessage() {
   const text = input.value.trim();
   if (!text) return;
   const peerId = session.isChristian ? activePeer : CHRISTIAN_ID;
-  if (!peerId) { alert('请先在左侧选择一位访客'); return; }
+  if (!peerId) { alert('Please select a guest on the left first'); return; }
   input.value = '';
   if (!dmChannels.has(peerId)) dmChannels.set(peerId, new DirectChannel(peerId));
   const channel = dmChannels.get(peerId);
@@ -288,12 +288,12 @@ async function sendDmMessage() {
   const result = await channel.sendMessage(params);
   if (result.isOk) {
     if (!peers.has(peerId)) peers.set(peerId, { name: peerId, messages: [] });
-    peers.get(peerId).messages.push({ mine: true, name: session.displayName + '（我）', text, time: Date.now() });
+    peers.get(peerId).messages.push({ mine: true, name: session.displayName + ' (me)', text, time: Date.now() });
     renderDmMessages();
     if (session.isChristian) renderPeerSidebar();
   } else {
     console.warn('[faith-chat] send dm failed', result);
-    alert('发送失败，请重试');
+    alert('Failed to send, please try again');
   }
 }
 
@@ -303,7 +303,7 @@ async function connectAndRender() {
   const connectResult = await NCEngine.connect({ token: session.accessToken });
   if (!connectResult.isOk) {
     clearSession();
-    renderGate('连接聊天服务失败，请重试');
+    renderGate('Failed to connect to the chat service, please try again');
     return;
   }
 
