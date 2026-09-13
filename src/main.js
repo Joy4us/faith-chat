@@ -4,6 +4,8 @@ import {
   ChannelType,
   OpenChannel,
   DirectChannel,
+  DirectChannelIdentifier,
+  BaseChannel,
   SendTextMessageParams,
   MessageHandler,
   ConnectionStatusHandler,
@@ -169,11 +171,7 @@ function setupEngineOnce() {
   engineReady = true;
 }
 
-function handleIncomingMessage(message) {
-  // We already render our own outgoing messages locally on send; skip echoes.
-  if (message.senderUserId === session.userId) return;
-
-  const ch = message.channelIdentifier;
+function toRenderable(message) {
   const rawText = message.content?.text ?? '[unsupported message type]';
   let giftKey = null;
   let verseObj = null;
@@ -194,8 +192,8 @@ function handleIncomingMessage(message) {
     }
   }
 
-  const renderable = {
-    mine: false,
+  return {
+    mine: message.senderUserId === session.userId,
     name: message.content?.senderUserInfo?.name || message.senderUserId,
     text: displayText,
     gift: giftKey && GIFTS[giftKey] ? giftKey : null,
@@ -203,6 +201,72 @@ function handleIncomingMessage(message) {
     replyTo,
     time: message.sentTime || Date.now(),
   };
+}
+
+// Fetches past messages for a direct (1:1) channel from the server and
+// merges them into the local peers map, so a freshly-opened device can see
+// private conversation history instead of only messages sent while that
+// device's tab happens to be open.
+async function loadDmHistory(peerId) {
+  try {
+    const query = BaseChannel.createMessagesQuery({
+      channelIdentifier: new DirectChannelIdentifier(peerId),
+      pageSize: 50,
+      isAscending: true,
+    });
+    let pages = 0;
+    while (query.hasNext && pages < 4) {
+      const result = await query.loadNextPage();
+      pages++;
+      if (!result.isOk || !result.data || !Array.isArray(result.data.data)) break;
+      for (const message of result.data.data) {
+        const renderable = toRenderable(message);
+        if (!peers.has(peerId)) peers.set(peerId, { name: renderable.name, messages: [] });
+        if (message.senderUserId === peerId) peers.get(peerId).name = renderable.name;
+        peers.get(peerId).messages.push(renderable);
+      }
+      if (result.data.data.length === 0) break;
+    }
+  } catch (e) {
+    console.warn('[faith-chat] failed to load DM history for', peerId, e);
+  }
+}
+
+// For the Ministry Team identity: discovers every guest who has an existing
+// direct-message channel (even from before this login) and loads each
+// conversation's history, so switching devices doesn't lose past private
+// messages.
+async function loadAllDmPeers() {
+  try {
+    const query = BaseChannel.createChannelsQuery({ pageSize: 50 });
+    let pages = 0;
+    const directPeerIds = [];
+    while (query.hasNext && pages < 4) {
+      const result = await query.loadNextPage();
+      pages++;
+      if (!result.isOk || !result.data || !Array.isArray(result.data.data)) break;
+      for (const ch of result.data.data) {
+        if (ch.channelType === ChannelType.DIRECT) directPeerIds.push(ch.channelId);
+      }
+      if (result.data.data.length === 0) break;
+    }
+    for (const peerId of directPeerIds) {
+      if (!dmChannels.has(peerId)) dmChannels.set(peerId, new DirectChannel(peerId));
+      if (!peers.has(peerId)) peers.set(peerId, { name: peerId, messages: [] });
+      await loadDmHistory(peerId);
+    }
+    if (activePeer === null && directPeerIds.length) activePeer = directPeerIds[0];
+  } catch (e) {
+    console.warn('[faith-chat] failed to load DM peer list', e);
+  }
+}
+
+function handleIncomingMessage(message) {
+  // We already render our own outgoing messages locally on send; skip echoes.
+  if (message.senderUserId === session.userId) return;
+
+  const ch = message.channelIdentifier;
+  const renderable = toRenderable(message);
 
   if (ch.channelType === ChannelType.OPEN && ch.channelId === ROOM_ID) {
     roomMessages.push(renderable);
@@ -695,6 +759,9 @@ async function connectAndRender() {
   if (!session.isChristian) {
     dmChannels.set(CHRISTIAN_ID, new DirectChannel(CHRISTIAN_ID));
     peers.set(CHRISTIAN_ID, { name: 'Ministry Team', messages: [] });
+    await loadDmHistory(CHRISTIAN_ID);
+  } else {
+    await loadAllDmPeers();
   }
 
   renderChatScreen();
