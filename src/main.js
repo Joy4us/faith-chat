@@ -26,16 +26,21 @@ let activePeer = null;
 let engineReady = false;
 
 function saveSession() {
-  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch (e) { /* ignore */ }
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch (e) { /* ignore */ }
 }
 function loadSession() {
   try {
-    const s = sessionStorage.getItem(SESSION_KEY);
+    const s = localStorage.getItem(SESSION_KEY);
     return s ? JSON.parse(s) : null;
   } catch (e) { return null; }
 }
 function clearSession() {
-  try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* ignore */ }
+  try { localStorage.removeItem(SESSION_KEY); } catch (e) { /* ignore */ }
+}
+
+function doLogout() {
+  clearSession();
+  location.reload();
 }
 
 function escapeHtml(s) {
@@ -169,7 +174,10 @@ function renderChatScreen() {
     <div class="chat-screen show">
       <div class="topbar">
         <strong>${session.isChristian ? '&#10013; Christian (me)' : 'Chat with Christian'}</strong>
-        <span class="whoami">${escapeHtml(session.displayName)}${session.isChristian ? '' : ' · guest'}</span>
+        <span class="whoami-wrap">
+          <span class="whoami">${escapeHtml(session.displayName)}${session.isChristian ? '' : ' · guest'}</span>
+          <button class="logout-link" id="logoutBtn" title="Log out and use a different name">Switch</button>
+        </span>
       </div>
       <div class="tabs">
         <button data-tab="room" class="${activeTab === 'room' ? 'active' : ''}">Public room</button>
@@ -205,6 +213,8 @@ function renderChatScreen() {
       renderChatScreen();
     });
   });
+
+  document.getElementById('logoutBtn').addEventListener('click', doLogout);
 
   document.getElementById('roomSend').addEventListener('click', sendRoomMessage);
   document.getElementById('roomInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendRoomMessage(); });

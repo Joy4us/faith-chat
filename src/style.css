@@ -137,10 +137,27 @@ body {
 
 .topbar strong { color: white; }
 
+.topbar .whoami-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .topbar .whoami {
   font-size: 13px;
   color: #cdd8f2;
 }
+
+.topbar .logout-link {
+  background: none;
+  border: none;
+  color: #cdd8f2;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+.topbar .logout-link:hover { color: white; }
 
 .tabs {
   display: flex;
