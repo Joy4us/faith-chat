@@ -14,6 +14,19 @@ const ROOM_ID = 'welcome-room';
 const CHRISTIAN_ID = 'christian';
 const SESSION_KEY = 'faithchat_session_v1';
 
+// Faith-themed "gift" reactions. These are symbolic (cross, dove, angel,
+// praying hands, etc.) rather than a literal depiction of any person, and
+// map to a small full-screen animation defined in style.css.
+const GIFTS = {
+  heart: { emoji: '❤️', label: 'Heart of Grace' },
+  angel: { emoji: '👼', label: 'Guardian Angel' },
+  dove: { emoji: '🕊️', label: 'Holy Spirit' },
+  cross: { emoji: '✝️', label: 'Cross of Light' },
+  pray: { emoji: '🙏', label: 'Amen' },
+  rainbow: { emoji: '🌈', label: "God's Promise" },
+  light: { emoji: '✨', label: 'Blessing' },
+};
+
 const app = document.getElementById('app');
 
 let session = null; // {userId, accessToken, appKey, areaCode, displayName, isChristian}
@@ -140,16 +153,20 @@ function handleIncomingMessage(message) {
   if (message.senderUserId === session.userId) return;
 
   const ch = message.channelIdentifier;
+  const rawText = message.content?.text ?? '[unsupported message type]';
+  const giftKey = typeof rawText === 'string' && rawText.startsWith('GIFT::') ? rawText.slice(6) : null;
   const renderable = {
     mine: false,
     name: message.content?.senderUserInfo?.name || message.senderUserId,
-    text: message.content?.text ?? '[unsupported message type]',
+    text: rawText,
+    gift: giftKey && GIFTS[giftKey] ? giftKey : null,
     time: message.sentTime || Date.now(),
   };
 
   if (ch.channelType === ChannelType.OPEN && ch.channelId === ROOM_ID) {
     roomMessages.push(renderable);
     if (activeTab === 'room') renderRoomMessages();
+    if (renderable.gift) playGiftAnimation(renderable.gift);
     return;
   }
 
@@ -165,10 +182,18 @@ function handleIncomingMessage(message) {
       if (session.isChristian) renderPeerSidebar();
       renderDmMessages();
     }
+    if (renderable.gift) playGiftAnimation(renderable.gift);
   }
 }
 
 // ---------------- Chat screen ----------------
+function giftBarHtml(scope) {
+  const buttons = Object.entries(GIFTS)
+    .map(([key, g]) => `<button type="button" class="gift-btn" data-gift="${key}" title="${escapeHtml(g.label)}">${g.emoji}</button>`)
+    .join('');
+  return `<div class="gift-bar" data-scope="${scope}">${buttons}</div>`;
+}
+
 function renderChatScreen() {
   app.innerHTML = `
     <div class="chat-screen show">
@@ -187,6 +212,7 @@ function renderChatScreen() {
         <div class="panel ${activeTab === 'room' ? 'active' : ''}" id="roomPanel">
           <div class="thread-wrap">
             <div class="messages" id="roomMessages"></div>
+            ${giftBarHtml('room')}
             <div class="composer">
               <input id="roomInput" type="text" placeholder="Say something in the public room..." />
               <button id="roomSend">Send</button>
@@ -197,6 +223,7 @@ function renderChatScreen() {
           <div class="peer-sidebar ${session.isChristian ? 'show' : ''}" id="peerSidebar"></div>
           <div class="thread-wrap">
             <div class="messages" id="dmMessages"></div>
+            ${giftBarHtml('dm')}
             <div class="composer">
               <input id="dmInput" type="text" placeholder="${session.isChristian ? 'Select a guest on the left to reply...' : 'Send Christian a private message...'}" />
               <button id="dmSend">Send</button>
@@ -221,12 +248,23 @@ function renderChatScreen() {
   document.getElementById('dmSend').addEventListener('click', sendDmMessage);
   document.getElementById('dmInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendDmMessage(); });
 
+  document.querySelectorAll('.gift-bar').forEach((bar) => {
+    const scope = bar.dataset.scope;
+    bar.querySelectorAll('.gift-btn').forEach((btn) => {
+      btn.addEventListener('click', () => sendGift(scope, btn.dataset.gift));
+    });
+  });
+
   if (activeTab === 'room') renderRoomMessages();
   if (activeTab === 'dm') { renderPeerSidebar(); renderDmMessages(); }
 }
 
 function bubbleHtml(m) {
   const time = new Date(m.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  if (m.gift && GIFTS[m.gift]) {
+    const g = GIFTS[m.gift];
+    return `<div class="msg gift ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(m.name)} · ${time}</div><div class="gift-card"><span class="gift-card-emoji">${g.emoji}</span><span class="gift-card-label">${escapeHtml(g.label)}</span></div></div>`;
+  }
   return `<div class="msg ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(m.name)} · ${time}</div>${escapeHtml(m.text)}</div>`;
 }
 
@@ -268,7 +306,81 @@ function renderDmMessages() {
   box.scrollTop = box.scrollHeight;
 }
 
+// ---------------- Gift animations ----------------
+function playGiftAnimation(key) {
+  const gift = GIFTS[key];
+  if (!gift) return;
+
+  if (key === 'heart' || key === 'light') {
+    const layer = document.createElement('div');
+    layer.className = 'gift-fx-layer';
+    const count = key === 'heart' ? 10 : 14;
+    for (let i = 0; i < count; i++) {
+      const p = document.createElement('span');
+      p.className = `gift-particle ${key}`;
+      p.textContent = gift.emoji;
+      if (key === 'heart') {
+        p.style.left = (10 + Math.random() * 80) + '%';
+        p.style.animationDelay = (Math.random() * 0.6) + 's';
+        p.style.fontSize = (20 + Math.random() * 18) + 'px';
+      } else {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 80 + Math.random() * 120;
+        p.style.setProperty('--dx', Math.cos(angle) * dist + 'px');
+        p.style.setProperty('--dy', Math.sin(angle) * dist + 'px');
+        p.style.animationDelay = (Math.random() * 0.2) + 's';
+      }
+      layer.appendChild(p);
+    }
+    document.body.appendChild(layer);
+    setTimeout(() => layer.remove(), 2700);
+    return;
+  }
+
+  const hero = document.createElement('div');
+  hero.className = `gift-hero ${key}`;
+  hero.textContent = gift.emoji;
+  document.body.appendChild(hero);
+  setTimeout(() => hero.remove(), 2700);
+}
+
 // ---------------- Sending ----------------
+async function sendGift(scope, key) {
+  const gift = GIFTS[key];
+  if (!gift) return;
+  const text = `GIFT::${key}`;
+
+  if (scope === 'room') {
+    if (!openChannel) return;
+    const params = new SendTextMessageParams({ text, senderUserInfo: { name: session.displayName } });
+    const result = await openChannel.sendMessage(params);
+    if (result.isOk) {
+      roomMessages.push({ mine: true, name: session.displayName + ' (me)', text, gift: key, time: Date.now() });
+      renderRoomMessages();
+      playGiftAnimation(key);
+    } else {
+      console.warn('[faith-chat] send gift failed', result);
+    }
+    return;
+  }
+
+  const peerId = session.isChristian ? activePeer : CHRISTIAN_ID;
+  if (!peerId) { alert('Please select a guest on the left first'); return; }
+  if (!dmChannels.has(peerId)) dmChannels.set(peerId, new DirectChannel(peerId));
+  const channel = dmChannels.get(peerId);
+  const params = new SendTextMessageParams({ text, senderUserInfo: { name: session.displayName } });
+  const result = await channel.sendMessage(params);
+  if (result.isOk) {
+    if (!peers.has(peerId)) peers.set(peerId, { name: peerId, messages: [] });
+    peers.get(peerId).messages.push({ mine: true, name: session.displayName + ' (me)', text, gift: key, time: Date.now() });
+    renderDmMessages();
+    if (session.isChristian) renderPeerSidebar();
+    playGiftAnimation(key);
+  } else {
+    console.warn('[faith-chat] send gift failed', result);
+  }
+}
+
 async function sendRoomMessage() {
   const input = document.getElementById('roomInput');
   const text = input.value.trim();
