@@ -15,6 +15,11 @@ import {
 const ROOM_ID = 'welcome-room';
 const CHRISTIAN_ID = 'christian';
 const SESSION_KEY = 'faithchat_session_v1';
+// How far back to pull public-room history on load. Nexconn's own message
+// store does not guarantee unlimited retention, so we always try to restore
+// the last 48 hours of the public room when a client connects.
+const ROOM_HISTORY_WINDOW_MS = 48 * 60 * 60 * 1000;
+const seenRoomMessageIds = new Set();
 
 // Faith-themed "gift" reactions. These are symbolic (cross, dove, angel,
 // praying hands, etc.) rather than a literal depiction of any person, and
@@ -193,6 +198,7 @@ function toRenderable(message) {
   }
 
   return {
+    id: message.messageId,
     mine: message.senderUserId === session.userId,
     name: message.content?.senderUserInfo?.name || message.senderUserId,
     text: displayText,
@@ -201,6 +207,35 @@ function toRenderable(message) {
     replyTo,
     time: message.sentTime || Date.now(),
   };
+}
+
+// Fetches the last ROOM_HISTORY_WINDOW_MS (48h) of public-room messages from
+// the server so the room doesn't look empty just because this tab happens to
+// be a fresh session (or the SDK's default enterChannel fetch missed older
+// messages). Safe to call every time we connect; dedupes by messageId.
+async function loadRoomHistory() {
+  try {
+    const query = OpenChannel.createOpenChannelMessagesQuery({
+      channelId: ROOM_ID,
+      pageSize: 50,
+      isAscending: true,
+      startTime: Date.now() - ROOM_HISTORY_WINDOW_MS,
+    });
+    let pages = 0;
+    while (query.hasNext && pages < 8) {
+      const result = await query.loadNextPage();
+      pages++;
+      if (!result.isOk || !result.data || !Array.isArray(result.data.data)) break;
+      for (const message of result.data.data) {
+        if (message.messageId && seenRoomMessageIds.has(message.messageId)) continue;
+        if (message.messageId) seenRoomMessageIds.add(message.messageId);
+        roomMessages.push(toRenderable(message));
+      }
+      if (result.data.data.length === 0) break;
+    }
+  } catch (e) {
+    console.warn('[faith-chat] failed to load room history', e);
+  }
 }
 
 // Fetches past messages for a direct (1:1) channel from the server and
@@ -269,6 +304,8 @@ function handleIncomingMessage(message) {
   const renderable = toRenderable(message);
 
   if (ch.channelType === ChannelType.OPEN && ch.channelId === ROOM_ID) {
+    if (renderable.id && seenRoomMessageIds.has(renderable.id)) return;
+    if (renderable.id) seenRoomMessageIds.add(renderable.id);
     roomMessages.push(renderable);
     if (activeTab === 'room') renderRoomMessages();
     if (renderable.gift) playGiftAnimation(renderable.gift);
@@ -754,6 +791,7 @@ async function connectAndRender() {
   }
 
   openChannel = new OpenChannel(ROOM_ID);
+  await loadRoomHistory();
   await openChannel.enterChannel({ messageCount: 100 });
 
   if (!session.isChristian) {
