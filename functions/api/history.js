@@ -11,8 +11,9 @@
 // here, since that would mean holding other people's private conversations
 // in a store with no per-user access control.
 //
-// GET  /api/history?channel=room        -> { messages: [...] } (last 48h)
-// POST /api/history  { channel: 'room', message: {...} }        -> { ok: true }
+// GET    /api/history?channel=room             -> { messages: [...] } (last 48h)
+// POST   /api/history  { channel: 'room', message: {...} }        -> { ok: true }
+// DELETE /api/history?channel=room&id=<msgId>  -> { ok: true } (used by "Recall")
 
 const HISTORY_WINDOW_MS = 48 * 60 * 60 * 1000;
 const MAX_STORED_MESSAGES = 500;
@@ -109,4 +110,31 @@ export async function onRequestPost(context) {
   await env.CHAT_HISTORY.put(key, JSON.stringify(messages));
 
   return json({ ok: true });
+}
+
+export async function onRequestDelete(context) {
+  const { request, env } = context;
+  if (!env.CHAT_HISTORY) return json({ ok: false, error: 'History storage is not configured' }, 500);
+
+  const url = new URL(request.url);
+  const channel = url.searchParams.get('channel');
+  const id = url.searchParams.get('id');
+  if (!isSupportedChannel(channel)) return json({ error: 'Unknown channel' }, 400);
+  if (!id) return json({ error: 'Missing id' }, 400);
+
+  const key = KV_KEY_PREFIX + channel;
+  const raw = await env.CHAT_HISTORY.get(key);
+  let messages = [];
+  if (raw) {
+    try {
+      messages = JSON.parse(raw);
+    } catch (e) {
+      messages = [];
+    }
+  }
+
+  const next = messages.filter((m) => m.id !== id);
+  await env.CHAT_HISTORY.put(key, JSON.stringify(next));
+
+  return json({ ok: true, removed: next.length !== messages.length });
 }

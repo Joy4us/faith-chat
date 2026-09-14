@@ -247,6 +247,17 @@ body {
 }
 .reply-trigger:hover { opacity: 1; text-decoration: underline; }
 
+.recall-trigger {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: inherit;
+  opacity: 0.65;
+  padding: 0 0 0 6px;
+}
+.recall-trigger:hover { opacity: 1; text-decoration: underline; color: #b8452f; }
+
 .reply-quote {
   font-size: 12px;
   padding: 5px 8px;

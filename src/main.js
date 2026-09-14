@@ -13,7 +13,7 @@ import {
   OpenChannelHandler,
 } from '@nexconn/chat';
 
-const ROOM_ID = 'welcome-room';
+const ROOM_ID = 'welcome-room-2';
 const CHRISTIAN_ID = 'christian';
 const SESSION_KEY = 'faithchat_session_v1';
 // How far back to pull public-room history on load. Nexconn's own message
@@ -21,6 +21,12 @@ const SESSION_KEY = 'faithchat_session_v1';
 // the last 48 hours of the public room when a client connects.
 const ROOM_HISTORY_WINDOW_MS = 48 * 60 * 60 * 1000;
 const seenRoomMessageIds = new Set();
+// Holds the real Nexconn Message object for messages *we sent* in this
+// session, keyed by messageId. Recall (deleteMessageForAll) needs the real
+// SDK object, not just our rendered/plain copy of it, and Nexconn's history
+// APIs cannot reliably reconstruct one for an older message on demand - so
+// recall is only offered for messages sent during the current page session.
+const rawMessagesById = new Map();
 
 // Faith-themed "gift" reactions. These are symbolic (cross, dove, angel,
 // praying hands, etc.) rather than a literal depiction of any person, and
@@ -500,18 +506,21 @@ function bubbleHtml(m, idx) {
   const time = new Date(m.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   const cleanName = (m.name || '').replace(/ \(me\)$/, '');
   const replyBtn = `<button type="button" class="reply-trigger" data-idx="${idx}" title="Reply">&#8617; Reply</button>`;
+  const recallBtn = m.mine
+    ? `<button type="button" class="recall-trigger" data-idx="${idx}" title="Recall">&#8634; Recall</button>`
+    : '';
   const replyBlock = m.replyTo
     ? `<div class="reply-quote"><strong>${escapeHtml(m.replyTo.name)}</strong>: ${escapeHtml(m.replyTo.text)}</div>`
     : '';
 
   if (m.verse) {
-    return `<div class="msg verse ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(cleanName)} · ${time} ${replyBtn}</div>${replyBlock}<div class="verse-card"><div class="verse-ref">&#128214; ${escapeHtml(m.verse.reference)}</div><div class="verse-text">${escapeHtml(m.verse.text)}</div><div class="verse-version">${escapeHtml(m.verse.translation)}</div></div></div>`;
+    return `<div class="msg verse ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(cleanName)} · ${time} ${replyBtn}${recallBtn}</div>${replyBlock}<div class="verse-card"><div class="verse-ref">&#128214; ${escapeHtml(m.verse.reference)}</div><div class="verse-text">${escapeHtml(m.verse.text)}</div><div class="verse-version">${escapeHtml(m.verse.translation)}</div></div></div>`;
   }
   if (m.gift && GIFTS[m.gift]) {
     const g = GIFTS[m.gift];
-    return `<div class="msg gift ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(cleanName)} · ${time} ${replyBtn}</div>${replyBlock}<div class="gift-card"><span class="gift-card-emoji">${g.emoji}</span><span class="gift-card-label">${escapeHtml(g.label)}</span></div></div>`;
+    return `<div class="msg gift ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(cleanName)} · ${time} ${replyBtn}${recallBtn}</div>${replyBlock}<div class="gift-card"><span class="gift-card-emoji">${g.emoji}</span><span class="gift-card-label">${escapeHtml(g.label)}</span></div></div>`;
   }
-  return `<div class="msg ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(cleanName)} · ${time} ${replyBtn}</div>${replyBlock}${escapeHtml(m.text)}</div>`;
+  return `<div class="msg ${m.mine ? 'me' : 'them'}"><div class="meta">${escapeHtml(cleanName)} · ${time} ${replyBtn}${recallBtn}</div>${replyBlock}${escapeHtml(m.text)}</div>`;
 }
 
 function wireReplyButtons(box, list, scope) {
@@ -527,6 +536,60 @@ function wireReplyButtons(box, list, scope) {
       if (inputEl) inputEl.focus();
     });
   });
+}
+
+// Removes a message the current user sent, both from Nexconn (best effort -
+// see the long comment above rawMessagesById) and from our own local view.
+// For the public room, also deletes it from the 48h backup so it doesn't
+// come back on the next reload.
+async function recallMessage(scope, list, idx, peerId) {
+  const m = list[idx];
+  if (!m || !m.mine) return;
+  const raw = m.id ? rawMessagesById.get(m.id) : null;
+  if (!raw) {
+    alert("This message can't be recalled anymore (the page was reloaded since it was sent).");
+    return;
+  }
+  const channel = scope === 'room' ? openChannel : dmChannels.get(peerId);
+  if (!channel) return;
+  try {
+    const result = await channel.deleteMessageForAll(raw);
+    if (!result.isOk) {
+      console.warn('[faith-chat] recall failed', result);
+      alert('Failed to recall this message, please try again.');
+      return;
+    }
+  } catch (e) {
+    console.warn('[faith-chat] recall failed', e);
+    alert('Failed to recall this message, please try again.');
+    return;
+  }
+
+  const removed = list.splice(idx, 1)[0];
+  if (removed?.id) {
+    rawMessagesById.delete(removed.id);
+    seenRoomMessageIds.delete(removed.id);
+  }
+
+  if (scope === 'room') {
+    renderRoomMessages();
+    if (removed?.id) deleteRoomHistoryEntry(removed.id);
+  } else {
+    renderDmMessages();
+  }
+}
+
+function wireRecallButtons(box, list, scope, peerId) {
+  box.querySelectorAll('.recall-trigger').forEach((btn) => {
+    const idx = Number(btn.dataset.idx);
+    btn.addEventListener('click', () => recallMessage(scope, list, idx, peerId));
+  });
+}
+
+// Best-effort removal of a recalled message from our own 48h backup.
+function deleteRoomHistoryEntry(id) {
+  fetch(`/api/history?channel=room&id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+    .catch((e) => console.warn('[faith-chat] failed to delete room history entry', e));
 }
 
 function renderReplyPreview(scope) {
@@ -557,6 +620,7 @@ function renderRoomMessages() {
     : '<div class="empty-hint">No one has spoken yet — say hello \u{1F44B}</div>';
   box.scrollTop = box.scrollHeight;
   wireReplyButtons(box, roomMessages, 'room');
+  wireRecallButtons(box, roomMessages, 'room');
 }
 
 function renderPeerSidebar() {
@@ -587,6 +651,7 @@ function renderDmMessages() {
   box.innerHTML = msgs.length ? msgs.map((m, idx) => bubbleHtml(m, idx)).join('') : '<div class="empty-hint">No messages yet — say something</div>';
   box.scrollTop = box.scrollHeight;
   wireReplyButtons(box, msgs, 'dm');
+  wireRecallButtons(box, msgs, 'dm', session.isChristian ? activePeer : CHRISTIAN_ID);
 }
 
 // ---------------- Bible lookup ----------------
@@ -658,7 +723,7 @@ async function sendVerse(scope) {
     if (result.isOk) {
       const id = result.data?.messageId;
       const time = Date.now();
-      if (id) seenRoomMessageIds.add(id);
+      if (id) { seenRoomMessageIds.add(id); rawMessagesById.set(id, result.data); }
       roomMessages.push({ id, mine: true, name: session.displayName + ' (me)', text, verse: lastVerseResult, time });
       renderRoomMessages();
       persistRoomMessage({ id, senderUserId: session.userId, name: session.displayName, text, verse: lastVerseResult, time });
@@ -675,8 +740,11 @@ async function sendVerse(scope) {
   const params = new SendTextMessageParams({ text, senderUserInfo: { name: session.displayName } });
   const result = await channel.sendMessage(params);
   if (result.isOk) {
+    const id = result.data?.messageId;
+    const time = Date.now();
+    if (id) rawMessagesById.set(id, result.data);
     if (!peers.has(peerId)) peers.set(peerId, { name: peerId, messages: [] });
-    peers.get(peerId).messages.push({ mine: true, name: session.displayName + ' (me)', text, verse: lastVerseResult, time: Date.now() });
+    peers.get(peerId).messages.push({ id, mine: true, name: session.displayName + ' (me)', text, verse: lastVerseResult, time });
     renderDmMessages();
     if (session.isChristian) renderPeerSidebar();
   } else {
@@ -735,7 +803,7 @@ async function sendGift(scope, key) {
     if (result.isOk) {
       const id = result.data?.messageId;
       const time = Date.now();
-      if (id) seenRoomMessageIds.add(id);
+      if (id) { seenRoomMessageIds.add(id); rawMessagesById.set(id, result.data); }
       roomMessages.push({ id, mine: true, name: session.displayName + ' (me)', text, gift: key, time });
       renderRoomMessages();
       playGiftAnimation(key);
@@ -753,8 +821,11 @@ async function sendGift(scope, key) {
   const params = new SendTextMessageParams({ text, senderUserInfo: { name: session.displayName } });
   const result = await channel.sendMessage(params);
   if (result.isOk) {
+    const id = result.data?.messageId;
+    const time = Date.now();
+    if (id) rawMessagesById.set(id, result.data);
     if (!peers.has(peerId)) peers.set(peerId, { name: peerId, messages: [] });
-    peers.get(peerId).messages.push({ mine: true, name: session.displayName + ' (me)', text, gift: key, time: Date.now() });
+    peers.get(peerId).messages.push({ id, mine: true, name: session.displayName + ' (me)', text, gift: key, time });
     renderDmMessages();
     if (session.isChristian) renderPeerSidebar();
     playGiftAnimation(key);
@@ -780,7 +851,7 @@ async function sendRoomMessage() {
     const id = result.data?.messageId;
     const time = Date.now();
     const replyTo = target ? { name: target.name, text: target.text } : null;
-    if (id) seenRoomMessageIds.add(id);
+    if (id) { seenRoomMessageIds.add(id); rawMessagesById.set(id, result.data); }
     roomMessages.push({
       id,
       mine: true,
@@ -817,13 +888,18 @@ async function sendDmMessage() {
   const params = new SendTextMessageParams({ text: wireText, senderUserInfo: { name: session.displayName } });
   const result = await channel.sendMessage(params);
   if (result.isOk) {
+    const id = result.data?.messageId;
+    const time = Date.now();
+    const replyTo = target ? { name: target.name, text: target.text } : null;
+    if (id) rawMessagesById.set(id, result.data);
     if (!peers.has(peerId)) peers.set(peerId, { name: peerId, messages: [] });
     peers.get(peerId).messages.push({
+      id,
       mine: true,
       name: session.displayName + ' (me)',
       text: rawText,
-      replyTo: target ? { name: target.name, text: target.text } : null,
-      time: Date.now(),
+      replyTo,
+      time,
     });
     dmReplyTarget = null;
     renderReplyPreview('dm');
@@ -846,9 +922,6 @@ async function connectAndRender() {
   }
 
   openChannel = new OpenChannel(ROOM_ID);
-  // TEMPORARY: exposed for one-off cleanup of test messages from console.
-  // Will be removed in the very next commit.
-  window.__debugCleanup = { openChannel, OpenChannel, OpenChannelIdentifier, BaseChannel, ROOM_ID, roomMessages };
   await loadRoomHistory();
   await openChannel.enterChannel({ messageCount: 100 });
 
