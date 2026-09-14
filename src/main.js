@@ -236,6 +236,46 @@ async function loadRoomHistory() {
   } catch (e) {
     console.warn('[faith-chat] failed to load room history', e);
   }
+
+  // Merge in our own 48h backup (see functions/api/history.js). Nexconn's
+  // own message store does not reliably retain public-room history (its
+  // query above can come back empty even for messages sent minutes ago on
+  // a fresh session), so this backup is the part that actually guarantees
+  // the 48-hour window.
+  try {
+    const res = await fetch('/api/history?channel=room');
+    if (res.ok) {
+      const data = await res.json();
+      for (const m of data.messages || []) {
+        if (m.id && seenRoomMessageIds.has(m.id)) continue;
+        if (m.id) seenRoomMessageIds.add(m.id);
+        roomMessages.push({
+          id: m.id,
+          mine: m.senderUserId === session.userId,
+          name: m.name,
+          text: m.text,
+          gift: m.gift || null,
+          verse: m.verse || null,
+          replyTo: m.replyTo || null,
+          time: m.time,
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('[faith-chat] failed to load room history backup', e);
+  }
+
+  roomMessages.sort((a, b) => a.time - b.time);
+}
+
+// Best-effort backup of a public-room message into our own 48h store.
+// Fire-and-forget: a network hiccup here should never block sending.
+function persistRoomMessage(entry) {
+  fetch('/api/history', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel: 'room', message: entry }),
+  }).catch((e) => console.warn('[faith-chat] failed to persist room message', e));
 }
 
 // Fetches past messages for a direct (1:1) channel from the server and
@@ -615,8 +655,12 @@ async function sendVerse(scope) {
     const params = new SendTextMessageParams({ text, senderUserInfo: { name: session.displayName } });
     const result = await openChannel.sendMessage(params);
     if (result.isOk) {
-      roomMessages.push({ mine: true, name: session.displayName + ' (me)', text, verse: lastVerseResult, time: Date.now() });
+      const id = result.data?.messageId;
+      const time = Date.now();
+      if (id) seenRoomMessageIds.add(id);
+      roomMessages.push({ id, mine: true, name: session.displayName + ' (me)', text, verse: lastVerseResult, time });
       renderRoomMessages();
+      persistRoomMessage({ id, senderUserId: session.userId, name: session.displayName, text, verse: lastVerseResult, time });
     } else {
       console.warn('[faith-chat] send verse failed', result);
     }
@@ -688,9 +732,13 @@ async function sendGift(scope, key) {
     const params = new SendTextMessageParams({ text, senderUserInfo: { name: session.displayName } });
     const result = await openChannel.sendMessage(params);
     if (result.isOk) {
-      roomMessages.push({ mine: true, name: session.displayName + ' (me)', text, gift: key, time: Date.now() });
+      const id = result.data?.messageId;
+      const time = Date.now();
+      if (id) seenRoomMessageIds.add(id);
+      roomMessages.push({ id, mine: true, name: session.displayName + ' (me)', text, gift: key, time });
       renderRoomMessages();
       playGiftAnimation(key);
+      persistRoomMessage({ id, senderUserId: session.userId, name: session.displayName, text, gift: key, time });
     } else {
       console.warn('[faith-chat] send gift failed', result);
     }
@@ -728,16 +776,22 @@ async function sendRoomMessage() {
   const params = new SendTextMessageParams({ text: wireText, senderUserInfo: { name: session.displayName } });
   const result = await openChannel.sendMessage(params);
   if (result.isOk) {
+    const id = result.data?.messageId;
+    const time = Date.now();
+    const replyTo = target ? { name: target.name, text: target.text } : null;
+    if (id) seenRoomMessageIds.add(id);
     roomMessages.push({
+      id,
       mine: true,
       name: session.displayName + ' (me)',
       text: rawText,
-      replyTo: target ? { name: target.name, text: target.text } : null,
-      time: Date.now(),
+      replyTo,
+      time,
     });
     roomReplyTarget = null;
     renderReplyPreview('room');
     renderRoomMessages();
+    persistRoomMessage({ id, senderUserId: session.userId, name: session.displayName, text: rawText, replyTo, time });
   } else {
     console.warn('[faith-chat] send room message failed', result);
     alert('Failed to send, please try again');
