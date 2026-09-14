@@ -845,6 +845,9 @@ async function connectAndRender() {
   }
 
   openChannel = new OpenChannel(ROOM_ID);
+  // TEMPORARY: exposed for one-off cleanup of test messages from console.
+  // Will be removed in the very next commit.
+  window.__debugCleanup = { openChannel, OpenChannel, ROOM_ID };
   await loadRoomHistory();
   await openChannel.enterChannel({ messageCount: 100 });
 
